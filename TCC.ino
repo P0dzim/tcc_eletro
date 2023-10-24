@@ -239,6 +239,7 @@ void loop() {
       motor();
       if(millis()-tempoAtual>=3000){
           lcdclear1 = lcdclear1;
+          tempoAtual=millis();
       }
       if(tempoEscolhido-millis()<=0){
         lcd.clear();
