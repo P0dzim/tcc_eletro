@@ -13,7 +13,7 @@ Servo ESC;
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 bool lcdclear1 = false, lcdclear2 = false;
-static bool iniciar = false, parar = false, aumentar = false, diminuir = false, rodando = false, mostrar_msg = false, selecionar_vel = false, tempoExiste=false;
+static bool iniciar = false, parar = false, aumentar = false, diminuir = false, rodando = false, mostrar_msg = false, selecionar_vel = false, tempoExiste=false, reseta1=false, reseta2=false;
 short int var1 = 0, var2 = 0, varM = 0, btns = 1, bnt_lcd = 9;
 short int velocidade = 0;
 short int exibirTempoLCD=0, tempoLimpaLCD=0;
@@ -60,7 +60,7 @@ void lerBotoes() {
 
   if ((PIND & btnIniciar) && iniciar && !rodando) {
     velocidade = btns;
-    rodando = true;
+    selecionar_vel = true;
     iniciar = false;
     controla_lcd(3);
   }
@@ -89,7 +89,6 @@ void motor() {
       }
       var1++;
       var2 = 0;
-      Serial.println(var1);
     }
   } else if (velocidade == 2) {
     while (var1 < 60) {
@@ -169,14 +168,6 @@ void controla_lcd(int i) {
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("Rodando");
-    lcd.setCursor(0, 1);
-    int percent=0;
-    if(tempoEscolhido>=millis()){
-        percent = millis();
-    }
-    int i = map(percent, 0, tempoEscolhido, 0, 100);
-    String tempoComPer = i+"%";
-    lcd.print(tempoComPer);
   }
   if((i==4) && (lcdclear1!=lcdclear2)){
     lcd.clear();
@@ -184,8 +175,22 @@ void controla_lcd(int i) {
     lcd.print("Abra a porta");
     lcdclear1=lcdclear2;
   }
+  if((i==5) && (tempoExiste)){
+    unsigned long int percent=0;
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Rodando");
+    percent = millis();
+    int i = 0;
+    i = map(percent, 0, tempoEscolhido, 0, 100);
+    lcd.setCursor(0, 1);
+    lcd.print(i);
+    lcd.setCursor(3, 1);
+    lcd.print("%");
+  }
 }
 
+void(* resetFunc) (void) = 0;
 
 void loop() {
   if ((PINB & portaswitch) == 0) {
@@ -200,60 +205,70 @@ void loop() {
       lcd.setCursor(0, 12);
       lcd.print(btns);
       lerBotoes();
-      motor();
-      if (rodando) selecionar_vel = true;
+      ESC.write(0);
     }
-    while(!tempoExiste){
+    while(tempoExiste == false){
       if (!(PIND & btnAumentar)) aumentar = true;
       if (!(PIND & btnDiminuir)) diminuir = true;
       if (!(PIND & btnIniciar)) iniciar = true;
 
       if ((PIND & btnAumentar) && aumentar) {
         exibirTempoLCD++;
+        lcd.clear();
         aumentar = false;
         if (exibirTempoLCD > 15) exibirTempoLCD = 1;
       }
       if ((PIND & btnDiminuir) && diminuir) {
-        exibirTempoLCD++;
+        exibirTempoLCD--;
+        lcd.clear();
         diminuir = false;
         if (exibirTempoLCD <= 0) exibirTempoLCD = 15;
       }
       if ((PIND & btnIniciar) && iniciar) {
+        rodando = true;
         tempoExiste = true;
         iniciar = false;
-        tempoAtual=millis();
-        tempoEscolhido = tempoAtual + ((exibirTempoLCD*60)*1000);
-      }
+        lcdclear2 = lcdclear1;
+        tempoAtual = millis();
+        tempoEscolhido = millis() + (exibirTempoLCD*60000);
+        }
+      if((PINB & portaswitch)){ 
+        tempoExiste = true;
+        lcdclear2 = lcdclear1;
+        }
       if(exibirTempoLCD != tempoLimpaLCD) lcd.clear();
       tempoLimpaLCD = exibirTempoLCD;
       lcd.setCursor(0, 0);
-      lcd.print("TEMPO:");
+      lcd.print("TEMPO: ");
       lcd.setCursor(7, 0);
-      String tempoComMin = exibirTempoLCD + " Min";
-      lcd.print(tempoComMin);
-      motor();
+      lcd.print(exibirTempoLCD);
+      lcd.setCursor(10, 0);
+      lcd.print("MIN");
     }
     while ((rodando) && ((PINB & portaswitch) == 0) && (tempoExiste)) {
       lerBotoes();
       controla_lcd(3);
       motor();
-      if(millis()-tempoAtual>=3000){
-          lcdclear1 = lcdclear1;
+      long int conta = millis() - tempoEscolhido;
+      if(millis()-tempoAtual >= 3000){
+          controla_lcd(5);
           tempoAtual=millis();
       }
-      if(tempoEscolhido-millis()<=0){
+      if(conta >= 0){
         lcd.clear();
         lcd.setCursor(0, 0);
         lcd.print("Mistura separada");
         lcd.setCursor(0, 1);
         lcd.print("Abrir porta");
-        while ((PINB & portaswitch) == 0) {
+        lcdclear1=lcdclear2;
+        while (!(PINB & portaswitch)) {
           velocidade = 0;
           motor();
         }
       }
     }
   } else { //Reseta todas as variaveis necessarias
+    if(reseta1 != reseta2) resetFunc();
     controla_lcd(0);
     mostrar_msg = false;
     iniciar = false;
